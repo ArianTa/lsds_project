@@ -25,8 +25,8 @@ def readout_state():
 
 
 def execute_action(action):
-    print(action)
-    print(actions[timestep])
+    #print(action)
+    #print(actions[timestep])
     keys = set(action.keys())
     correct_keys = set(actions[timestep])
     assert(not(keys < correct_keys or keys > correct_keys)) 
@@ -52,7 +52,6 @@ def allocate_flight_computers(arguments):
     for fc in flight_computers:
         fc.start()
 
-
     return flight_computers
 
 # Connect with Kerbal Space Program
@@ -75,28 +74,35 @@ def next_action(state):
 
     return None
 
+timestep = 0
 complete = False
-try:
-    while not complete:
-        timestep += 1
-        state = readout_state()
-        leader = select_leader()
-        state_decided = leader.decide_on_state(state)
-        if not state_decided:
-            continue
-        action = leader.sample_next_action()
-        if action is None:
-            complete = True
-            continue
-        if leader.decide_on_action(action):
-            if timestep % 1000 == 0:
-                print(f"{timestep}/{len(states)}")
-            execute_action(action)
-        else:
-            timestep -= 1
-except Exception as e:
-    print(e)
-    traceback.print_exc()
+#try:
+while not complete and timestep < 2000:
+    print(f"TimeStep: {timestep}")
+    print(f"Queue 0: {flight_computers[0].link.worker_thread.queue.qsize()}")
+    print(f"Queue 1: {flight_computers[1].link.worker_thread.queue.qsize()}")
+    print(f"Queue 2: {flight_computers[2].link.worker_thread.queue.qsize()}")
+    timestep += 1
+    state = readout_state()
+    leader = select_leader()
+    state_decided = leader.decide_on_state(state)
+    if not state_decided:
+        continue
+    #time.sleep(1)
+    action = leader.sample_next_action()
+    if action is None:
+        complete = True
+        continue
+    if leader.decide_on_action(action):
+        if timestep % 1000 == 0:
+            print(f"{timestep}/{len(states)}")
+        execute_action(action)
+    else:
+        timestep -= 1
+    #time.sleep(1)
+#except Exception as e:
+#    print(e)
+#    traceback.print_exc()
 
 if complete:
     print("Success!")

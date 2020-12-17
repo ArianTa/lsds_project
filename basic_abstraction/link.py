@@ -3,9 +3,9 @@ import threading
 import os
 import re
 import random
-import queue
 import time
 import pickle
+from basic_abstraction.utils import WorkerThread
 
 class FairLossLink:
     max_message_length = 1024
@@ -38,7 +38,7 @@ class FairLossLink:
 
     def initialize_listener(self):
         self.listening_thread = FairLossLink.ListeningThread(self)
-        self.worker_thread = FairLossLink.WorkerThread()
+        self.worker_thread = WorkerThread()
         self.listening_thread.start()
         self.worker_thread.start()
         
@@ -100,26 +100,6 @@ class FairLossLink:
         def run(self):
             self.link.receive()
 
-    class WorkerThread(threading.Thread):
-        def __init__(self):
-            super().__init__()
-            self.queue = queue.Queue()
-            self.alive = True
-
-        def run(self):
-            while self.alive:
-                try:
-                    callback, args = self.queue.get(timeout=1)
-                except queue.Empty:
-                    pass
-                else:
-                    callback(*args)
-
-        def kill(self):
-            self.alive = False
-
-        def put(self, callback, args):
-            self.queue.put((callback, args))
 
 if __name__ == "__main__":
     import time 

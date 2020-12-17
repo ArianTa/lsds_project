@@ -18,7 +18,7 @@ class HierarchicalConsensus(Consensus):
     def __init__(self, link):
         super().__init__(link)
         self.broadcast = BestEffortBroadcast(link, self.broadcast_receive)
-        self.failure_detector = PerfectFailureDetector(self.link, self.failure_detection)
+        self.failure_detector = PerfectFailureDetector(self.link, self.failure_detection, timeout_time=1)
         self.peers = {self.link.process_number}
         self.alive = True
 
@@ -43,6 +43,7 @@ class HierarchicalConsensus(Consensus):
     def failure_detection(self, process_number):
         self.failed_nodes.add(process_number)
         self.update_event.set()
+        print(f"{self.link.process_number}: {process_number} crash detected.")
 
     def start(self):
         self.failure_detector.start_heartbeat()

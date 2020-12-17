@@ -4,6 +4,7 @@ class Broadcast:
     def __init__(self, link, deliver_callback):
         self.link = link
         self.deliver_callback = deliver_callback
+        self.debug = False
 
     def broadcast(self, message):
         pass
@@ -24,6 +25,8 @@ class BestEffortBroadcast(Broadcast):
         self.peers.update(peers)
 
     def broadcast(self, message):
+        if self.debug:
+            print(f"{self.link.process_number}(beb): {message} broadcasted.")
         for peer in self.peers:
             self.link.send(peer, (self.message_type, message))
 
@@ -31,6 +34,8 @@ class BestEffortBroadcast(Broadcast):
         if raw_message[0] == self.message_type:
             message = raw_message[1]
             self.deliver_callback(source_number, message)
+            if self.debug:
+                print(f"{self.link.process_number}(beb): {message} received.")
 
 
 class EagerReliableBroadcast(Broadcast):
@@ -41,6 +46,7 @@ class EagerReliableBroadcast(Broadcast):
         self.be_broadcast = BestEffortBroadcast(link, self.be_deliver, loss)
         self.delivered = [None] * max_concurrent_messages
         self.delivered_cycle = 0
+        self.sequence_number = 0
 
     def add_peers(self, *peers):
         self.be_broadcast.add_peers(*peers)
@@ -50,17 +56,24 @@ class EagerReliableBroadcast(Broadcast):
         self.delivered_cycle = (self.delivered_cycle + 1) % len(self.delivered)
 
     def broadcast(self, message):
-        raw_message = (self.message_type, self.link.process_number, message)
+        raw_message = (self.message_type, self.link.process_number, message, self.next_sequence_number())
+        if self.debug:
+            print(f"{self.link.process_number}(erb): {raw_message[2:-1]} broadcasted.")
         self.register_delivered(raw_message)
         self.be_broadcast.broadcast(raw_message)
-        self.deliver_callback(self.link.process_number, message)
+
+    def next_sequence_number(self):
+        self.sequence_number += 1
+        return self.sequence_number
 
     def be_deliver(self, source_number, raw_message):
         if raw_message[0] == self.message_type:
-            _, source, message = raw_message
+            _, source, message, sequence = raw_message
             if raw_message not in self.delivered:
                 self.register_delivered(raw_message)
                 self.be_broadcast.broadcast(raw_message)
+                if self.debug:
+                    print(f"{self.link.process_number}(erb): {(message, sequence)} from {source}.")
                 self.deliver_callback(source, message)
 
 
