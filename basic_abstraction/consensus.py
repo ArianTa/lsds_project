@@ -7,6 +7,7 @@ import threading
 class Consensus:
     def __init__(self, link):
         self.link = link
+        self.debug = False
 
     def add_peers(peers_number_list):
         pass
@@ -23,11 +24,14 @@ class HierarchicalConsensus(Consensus):
         self.alive = True
 
         self.failed_nodes = set()
-        self.lock = threading.Lock()
-        self.update_event = threading.Event()
+        self.lock = threading.RLock()
+        self.decided_event = threading.Event()
+        self.decided = None
         self.reset()
 
     def reset(self):
+        if self.debug:
+            print(f"{self.link.process_number}(c): Resetting consensus.")
         self.round = 0
         self.proposal = None
         self.proposer = -1
@@ -41,49 +45,78 @@ class HierarchicalConsensus(Consensus):
         self.delivered.update({peer: False for peer in peers})
 
     def failure_detection(self, process_number):
-        self.failed_nodes.add(process_number)
-        self.update_event.set()
-        print(f"{self.link.process_number}: {process_number} crash detected.")
+        with self.lock:
+            if self.debug:
+                print(f"{self.link.process_number}(c): {process_number} crash detected.")
+            self.failed_nodes.add(process_number)
+        self.update()
 
     def start(self):
         self.failure_detector.start_heartbeat()
 
+    def update(self):
+        with self.lock:
+            if self.round < len(self.peers):
+                if self.round in self.failed_nodes or self.delivered[self.round]:
+                    self.round += 1
+                    self.update()
+
+                elif self.round == self.link.process_number and not self.decided_event.is_set():
+                    if self.debug:
+                        print(f"{self.link.process_number}(c): Decided on {self.proposal} and broadcasting.")
+                    self.broadcast.broadcast(("c", self.proposal))
+                    self.decided = self.proposal
+                    self.round += 1
+                    self.update()
+            else:
+                self.decided_event.set()
+                self.reset()
+
     def propose(self, value):
-        if not self.alive:
-            return None
+        if not self.alive or self.decided is not None:
+            return False
+
+
+        if self.debug:
+            print(f"{self.link.process_number}(c): Got proposition {value}.")
 
         with self.lock:
             if self.proposal is None:
                 self.proposal = value
 
-            while self.round < len(self.peers):
-                if self.round in self.failed_nodes or self.delivered[self.round]:
-                    self.round += 1
+            self.decided_event.clear()
 
-                elif self.round == self.link.process_number:
-                    self.broadcast.broadcast(("c", self.proposal))
-                    decided = self.proposal
-                    self.round += 1
+        self.update()
+        
+        return True
 
-                else:
-                    self.update_event.wait()
-                    self.update_event.clear()
+    def wait_decided(self):
+        self.decided_event.wait()
+        return self.get_decided()
 
-            self.reset()
-        return decided
-
+    def get_decided(self):
+        if self.decided_event.is_set():
+            decided = self.decided
+            self.decided = None
+            return decided
+        return None
 
     def broadcast_receive(self, source_number, raw_message):
         mess_type = raw_message[0]
         if mess_type == "c":
             value = raw_message[1]
+            if self.debug:
+                print(f"{self.link.process_number}(c): {source_number} has decided on {value}.")
             if source_number < self.link.process_number and source_number > self.proposer:
                 self.proposal = value
                 self.proposer = source_number
             self.delivered[source_number] = True
-            self.update_event.set()
+            self.update()
+
 
     def kill(self):
+        if self.debug:
+            print(f"{self.link.process_number}(c): Killing consensus.")
         self.alive = False
         self.failure_detector.kill()
 
@@ -99,29 +132,20 @@ if __name__ == "__main__":
             self.proposal = None
 
         def propose(self, value):
-            self.proposal = value
-            thread = Test.TestThread(self)
-            thread.start()
+            return self.consensus.propose(value)
 
-        def run(self):
-            value = self.consensus.propose(self.proposal)
-            print("{}: Decided on {}".format(self.process_number, value))
+        def decided(self):
+            print("{}: Decided on {}".format(self.process_number, self.consensus.wait_decided()))
 
         def kill(self):
             self.consensus.kill()
             self.link.kill()
 
-        class TestThread(threading.Thread):
-            def __init__(self, test):
-                super().__init__()
-                self.test = test
-
-            def run(self):
-                self.test.run()
 
 
     test0 = Test(0)
     test1 = Test(1)
+    test1.consensus.debug = True
     test2 = Test(2)
 
     test0.consensus.add_peers(1, 2)
@@ -136,6 +160,10 @@ if __name__ == "__main__":
     test1.propose("lil0")
     test2.propose("wesh0")
 
+    test0.decided()
+    test1.decided()
+    test2.decided()
+
     time.sleep(0.2)
 
     test1.kill()
@@ -143,6 +171,10 @@ if __name__ == "__main__":
     test0.propose("lol1")
     test1.propose("lil1")
     test2.propose("wesh1")
+
+    test0.decided()
+    test1.decided()
+    test2.decided()
 
     time.sleep(0.2)
 
