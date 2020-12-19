@@ -5,7 +5,7 @@ import re
 import random
 import time
 import pickle
-from basic_abstraction.utils import WorkerThread
+from utils import WorkerThread, Logging
 
 class FairLossLink:
     max_message_length = 1024
@@ -17,7 +17,7 @@ class FairLossLink:
         self.listening_thread = None
         self.worker_thread = None
         self.alive = True
-        self.debug = False
+        self.logger = Logging(process_number, "FairLossLink")
         self.create_socket()
         self.initialize_listener()
 
@@ -49,16 +49,14 @@ class FairLossLink:
             if(len(message_bytes) >= FairLossLink.max_message_length):
                 raise Exception("Message exceding maximum length of {} bytes, received {} bytes"
                         .format(FairLossLink.max_message_length, len(message_bytes)))
-            if self.debug:
-                print("{}: Sending {} to {}".format(self.process_number, message, destination_process))
+            self.logger.log_debug(f"Sending {message} to {destination_process}")
             try:
                 self.socket.sendto(message_bytes, self.get_address(destination_process))
             except Exception as e:
-                if self.debug:
-                    print(f"{self.process_number}: Message {message} for {destination_process} dropped")
+                self.logger.log_debug(f"Message {message} for {destination_process} dropped.")
 
-        elif self.debug:
-            print("{}: Not send {} to {}".format(self.process_number, message, destination_process))
+        else:
+            self.logger.log_debug(f"Not send {message} to {destination_process}")
 
     def receive(self):
         while self.alive:
@@ -69,8 +67,7 @@ class FairLossLink:
             else:
                 message = pickle.loads(data)
                 source_number = self.get_process(source)
-                if self.debug:
-                    print("{}: Received {} from {}".format(self.process_number, message, source_number))
+                self.logger.log_debug(f"Received {message} from {source_number}")
                 for callback in self.receive_callbacks:
                     self.worker_thread.put(callback, (source_number, message))
         self.socket.close()
@@ -88,9 +85,6 @@ class FairLossLink:
     def kill(self):
         self.alive = False
         self.worker_thread.kill()
-
-    def set_debug(self, debug):
-        self.debug = debug
 
     class ListeningThread(threading.Thread):
         def __init__(self, link):
@@ -129,7 +123,7 @@ if __name__ == "__main__":
     test0.link.send(0, "Sup")
     print("Send Sup")
 
-    time.sleep(0.1)
+    time.sleep(3)
 
     test0.link.kill()
     test1.link.kill()
